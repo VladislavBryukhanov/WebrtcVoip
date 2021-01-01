@@ -3,6 +3,7 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "noImplicitAny": true,
+    "target": "es2015",
     "allowJs": true
   },
   "include": [

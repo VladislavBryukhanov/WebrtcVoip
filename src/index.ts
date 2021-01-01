@@ -1,10 +1,6 @@
 
 
 import {html, render} from 'lit-html';
-// import {App} from './App';
-
-import '@webcomponents/custom-elements';
-import '@webcomponents/webcomponentsjs';
 
 import './App';
 

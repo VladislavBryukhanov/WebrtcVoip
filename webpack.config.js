@@ -1,5 +1,5 @@
-const path = require('path');
 const webpack = require('webpack');
+const {resolve} = require('path');
 
 
 
@@ -27,18 +27,37 @@ const webpack = require('webpack');
 
 const TerserPlugin = require('terser-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const {CleanWebpackPlugin} = require('clean-webpack-plugin');
 
+const webcomponentsjs = './node_modules/@webcomponents/webcomponentsjs';
 
+const polyfills = [
+  {
+    from: resolve(`${webcomponentsjs}/webcomponents-*.{js,map}`),
+    to: 'vendor',
+  },
+  {
+    from: resolve(`${webcomponentsjs}/bundles/*.{js,map}`),
+    to: 'vendor/bundles',
+  },
+  {
+    from: resolve(`${webcomponentsjs}/custom-elements-es5-adapter.js`),
+    to: 'vendor',
+  }
+];
 
 
 module.exports = {
   mode: 'development',
   entry: './src/index.ts',
   plugins: [
+    new CleanWebpackPlugin(),
     new webpack.ProgressPlugin(),
     new HtmlWebpackPlugin({
       template: 'public/index.html'
-    })
+    }),
+    new CopyWebpackPlugin({patterns: polyfills})
   ],
 
   module: {
@@ -46,7 +65,7 @@ module.exports = {
       test: /\.(ts|tsx)$/,
       loader: 'ts-loader',
       include: [
-        path.resolve(__dirname, 'src'),
+        resolve(__dirname, 'src'),
         /node_modules(?:\/|\\)lit-element|lit-html/
       ],
       exclude: [/node_modules/]
