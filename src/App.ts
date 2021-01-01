@@ -6,4 +6,3 @@ export class App extends LitElement {
         return html`<h1>HelloWorld</h1>`
     }
 }
-// customElements.define('my-element', App);

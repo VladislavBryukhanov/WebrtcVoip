@@ -3,6 +3,7 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "noImplicitAny": true,
+    "moduleResolution": "node",
     "target": "es2015",
     "allowJs": true
   },
