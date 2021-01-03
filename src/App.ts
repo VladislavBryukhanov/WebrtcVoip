@@ -88,7 +88,13 @@ export class App extends LitElement {
     subscribeICECandidateManagement() {
         const localIceCandidates = new Map<string, RTCIceCandidate>();
 
-        this.signalingService.listenConnection(({candidate: storedCandidate}) => {
+        this.signalingService.listenConnection((connection) => {
+            if (!connection) return;
+
+            const {candidate: storedCandidate} = connection;
+
+            // TODO skip initial IceCandidate = depricated or own candidate 
+
             if (storedCandidate && !localIceCandidates.has(storedCandidate.candidate)) {
                 this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
             }
@@ -115,11 +121,14 @@ export class App extends LitElement {
         this.subscribeICECandidateManagement();
 
         const connection = await this.signalingService.fetchConnection();
-        const isExpired = connection.expiration_time < Date.now();
-        const createdByMe = connection.initiatorId === this.initiatorId;
 
-        if (connection && connection.offer && !createdByMe && !isExpired) {
-            return this.connectExists(connection.offer);
+        if (connection) {
+            const isExpired = connection.expiration_time < Date.now();
+            const isCreatedByMe = connection.initiatorId === this.initiatorId;
+    
+            if (connection.offer && !isCreatedByMe && !isExpired) {
+                return this.connectExists(connection.offer);
+            }
         }
 
         this.createConnection();
