@@ -1,2 +1,2 @@
-import './services/firebase';
+import './services/firebase-init';
 import './App';
