@@ -78,7 +78,7 @@ export class App extends LitElement {
 
         if (!initiatorId) {
             initiatorId = Date.now().toString();
-            localStorage.setItem('initiator', this.initiatorId);
+            localStorage.setItem('initiator', initiatorId);
         }
 
         return initiatorId;
@@ -86,30 +86,43 @@ export class App extends LitElement {
     
     // TODO incapsulate this.connectionManager.peerConnection, add DI to inject connectionManager
     subscribeICECandidateManagement() {
-        const localIceCandidates = new Map<string, RTCIceCandidate>();
+        const ignorableIceCandidates = new Map<string, RTCIceCandidate>();
 
         this.signalingService.listenConnection((connection) => {
             if (!connection) return;
 
-            const {candidate: storedCandidate} = connection;
+            const {candidates: storedCandidates} = connection;
 
             // TODO skip initial IceCandidate = depricated or own candidate 
 
-            if (storedCandidate && !localIceCandidates.has(storedCandidate.candidate)) {
-                this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
+            if (storedCandidates) {
+                storedCandidates.forEach(storedCandidate => {
+                    if (!ignorableIceCandidates.has(storedCandidate.candidate)) {
+                        ignorableIceCandidates.set(storedCandidate.candidate, storedCandidate);
+                        this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
+                    }
+                });
             }
         });
 
         this.connectionManager.peerConnection.addEventListener('icecandidate', event => {
             if (event.candidate) {
-                localIceCandidates.set(event.candidate.candidate, event.candidate);
+                ignorableIceCandidates.set(event.candidate.candidate, event.candidate);
                 this.signalingService.upsertIceCandidate(event.candidate);
             }
         });
 
         this.connectionManager.peerConnection.addEventListener('track', event => {
-            this.remoteMediaStream = new MediaStream();
+            if (!this.remoteMediaStream) {
+                this.remoteMediaStream = new MediaStream();
+            }   
             this.remoteMediaStream.addTrack(event.track);
+        });
+
+        this.connectionManager.peerConnection.addEventListener('connectionstatechange', (event) => {
+            if (this.connectionManager.peerConnection.connectionState === 'connected') {
+                this.signalingService.disposeConnection();
+            }
         });
     }
 
@@ -125,6 +138,10 @@ export class App extends LitElement {
         if (connection) {
             const isExpired = connection.expiration_time < Date.now();
             const isCreatedByMe = connection.initiatorId === this.initiatorId;
+
+            if (isCreatedByMe) {
+                await this.signalingService.disposeConnection();
+            }
     
             if (connection.offer && !isCreatedByMe && !isExpired) {
                 return this.connectExists(connection.offer);

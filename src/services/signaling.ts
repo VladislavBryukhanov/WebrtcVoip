@@ -2,12 +2,12 @@ import firebase from 'firebase';
 const db = firebase.firestore();
 
 const COLLECTION_NAME = 'signaling';
-const CONNECTION_TTL = 30 * 1000;
+const CONNECTION_TTL = 15 * 1000;
 
 interface ConnectionInfo {
     offer: RTCSessionDescriptionInit;
     answer?: RTCSessionDescriptionInit;
-    candidate?: RTCIceCandidate;
+    candidates?: RTCIceCandidate[];
     expiration_time: number;
     initiatorId: string;
 }
@@ -43,7 +43,7 @@ export default class SignalinService {
         return this.collection
             .doc(this.connectionAccessor)
             .set(
-                {candidate: candidate.toJSON()}, 
+                {candidates: firebase.firestore.FieldValue.arrayUnion(candidate.toJSON())}, 
                 {merge: true}
             );
     }
@@ -72,5 +72,10 @@ export default class SignalinService {
                     }
                 });
         });
+    }
+
+    disposeConnection() {
+        // TODO Refactor
+        return this.collection.doc(this.connectionAccessor).delete();
     }
 }
