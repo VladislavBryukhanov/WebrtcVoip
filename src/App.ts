@@ -13,6 +13,9 @@ export class App extends LitElement {
     communicationStart: boolean = false;
 
     @property()
+    feedbackMessage: string;
+
+    @property()
     localMediaStream?: MediaStream;
     @property()
     remoteMediaStream?: MediaStream;
@@ -123,13 +126,17 @@ export class App extends LitElement {
             this.remoteMediaStream.addTrack(event.track);
         });
 
-        // TODO add WebRTC connection feedback
+        this.connectionManager.peerConnection.addEventListener('connectionstatechange', (event) => {
+            if (this.connectionManager.peerConnection.connectionState === 'connected') {
+                this.signalingService.disposeConnection();
+                this.feedbackMessage = '';
+            }
 
-        // this.connectionManager.peerConnection.addEventListener('connectionstatechange', (event) => {
-        //     if (this.connectionManager.peerConnection.connectionState === 'connected') {
-        //         this.signalingService.disposeConnection();
-        //     }
-        // });
+            if (this.connectionManager.peerConnection.connectionState === 'failed') {
+                this.signalingService.disposeConnection();
+                this.feedbackMessage = 'Connection failed please reload page and try again';
+            }
+        });
     }
     
     async processIceCandidates() {
@@ -143,6 +150,8 @@ export class App extends LitElement {
     }
 
     async processConnection() {
+        this.feedbackMessage = 'Connection initializing...';
+
         this.signalingService = new SignalinService(this.accessor);
         this.connectionManager = new ConnectionManager();
 
@@ -195,6 +204,12 @@ export class App extends LitElement {
                 <video id="local-stream-view" height="300px" autoplay muted></video>
             `}
             
+            ${this.feedbackMessage && html`<div>
+                <hr>
+                ${this.feedbackMessage}
+                <hr>
+            </div>`}
+
             ${this.remoteMediaStream && html`
                 </hr>
                 <h3>Interlocutor's translation:</h3>
