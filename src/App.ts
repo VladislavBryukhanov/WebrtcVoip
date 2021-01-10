@@ -1,6 +1,7 @@
-import {customElement, html, LitElement, property, query} from 'lit-element';
+import {customElement, html, LitElement, property} from 'lit-element';
 import ConnectionManager from './services/connection-manager';
 import SignalinService from './services/signaling';
+import initiatorManager from './utils/initiator-manager';
 
 const VERSION = '1.0';
 const DEFAULT_CONNECTION_ACCESSOR = 'public';
@@ -10,20 +11,13 @@ export class App extends LitElement {
     @property()
     accessor: string = DEFAULT_CONNECTION_ACCESSOR;
     @property()
-    communicationStart: boolean = false;
-
-    @property()
-    feedbackMessage: string;
+    feedbackMessage?: string;
 
     @property()
     localMediaStream?: MediaStream;
     @property()
     remoteMediaStream?: MediaStream;
 
-    @query('#local-stream-view')
-    localStreamVideo?: HTMLVideoElement;
-    @query('#remote-stream-view')
-    remoteStreamVideo?: HTMLVideoElement;
 
     signalingService?: SignalinService;
     connectionManager?: ConnectionManager;
@@ -31,28 +25,19 @@ export class App extends LitElement {
     delayedIceCandidates: RTCIceCandidate[] = [];
 
     initiatorId?: string;
-    connectionInited: boolean = false;
+    connectionInited?: boolean;
 
     async firstUpdated() {
-        this.initiatorId = this.getInitiator();
-    }
-
-    updated(updates: Map<string, MediaStream | HTMLVideoElement | string>) {
-        if (this.localStreamVideo && this.localMediaStream && !updates.get('localMediaStream')) {
-            this.localStreamVideo.srcObject = this.localMediaStream;
-        }
-
-        if (this.remoteStreamVideo && this.remoteMediaStream && !updates.get('remoteMediaStream')) {
-            this.remoteStreamVideo.srcObject = this.remoteMediaStream;
+        if (!this.initiatorId) {
+            this.initiatorId = initiatorManager.getLocalInitiator() || initiatorManager.generateAndSaveLocalInitiator();
         }
     }
 
     async onListenConnection() {
-        this.communicationStart = true;
-        const signalingService = new SignalinService(this.accessor);
-        signalingService.disposeConnection();
+        this.signalingService = new SignalinService(this.accessor);
+        this.signalingService.disposeConnection();
 
-        const offer = await signalingService.listenConnectionUpdateOnce('offer');
+        const offer = await this.signalingService.listenConnectionUpdateOnce('offer');
 
         if (offer && !this.connectionInited) {
             this.onCameraStream();
@@ -60,7 +45,6 @@ export class App extends LitElement {
     }
 
     async onScreenStream() {
-        this.communicationStart = true;
         // @ts-ignore
         this.localMediaStream = await navigator.mediaDevices.getDisplayMedia();
         await this.processConnection();
@@ -68,7 +52,6 @@ export class App extends LitElement {
     }
 
     async onCameraStream() {
-        this.communicationStart = true;
         this.localMediaStream = await navigator.mediaDevices.getUserMedia({
             'video': true,
             'audio': true,
@@ -77,17 +60,6 @@ export class App extends LitElement {
         await this.processIceCandidates();
     }
 
-    getInitiator() {
-        let initiatorId = localStorage.getItem('initiator');
-
-        if (!initiatorId) {
-            initiatorId = Date.now().toString();
-            localStorage.setItem('initiator', initiatorId);
-        }
-
-        return initiatorId;
-    }
-    
     // TODO incapsulate this.connectionManager.peerConnection, add DI to inject connectionManager
     subscribeICECandidateManagement() {
         const ignorableIceCandidates = new Map<string, RTCIceCandidate>();
@@ -128,13 +100,13 @@ export class App extends LitElement {
 
         this.connectionManager.peerConnection.addEventListener('connectionstatechange', (event) => {
             if (this.connectionManager.peerConnection.connectionState === 'connected') {
-                this.signalingService.disposeConnection();
                 this.feedbackMessage = '';
+                this.signalingService.disposeConnection();
             }
 
             if (this.connectionManager.peerConnection.connectionState === 'failed') {
-                this.signalingService.disposeConnection();
                 this.feedbackMessage = 'Connection failed please reload page and try again';
+                this.signalingService.disposeConnection();
             }
         });
     }
@@ -194,27 +166,14 @@ export class App extends LitElement {
         return html`
             <h1>WebRTC Video communication App v${VERSION}</h1>
             <input .value=${this.accessor} ?disabled=${!!this.localMediaStream} />
-
-            <button ?disabled=${this.communicationStart} @click=${this.onListenConnection}>Waiting for connection</button>
-            <button ?disabled=${this.communicationStart} @click=${this.onScreenStream}>Share screen</button>
-            <button ?disabled=${this.communicationStart} @click=${this.onCameraStream}>Run camera</button>
-
-            ${this.localMediaStream && html`
-                <h3>Your translation:</h3>
-                <video id="local-stream-view" height="300px" autoplay muted></video>
-            `}
-            
-            ${this.feedbackMessage && html`<div>
-                <hr>
-                ${this.feedbackMessage}
-                <hr>
-            </div>`}
-
-            ${this.remoteMediaStream && html`
-                </hr>
-                <h3>Interlocutor's translation:</h3>
-                <video id="remote-stream-view" height="300px" autoplay></video>
-            `}
+            <video-ui
+                .feedbackMessage=${this.feedbackMessage}
+                .localMediaStream=${this.localMediaStream}
+                .remoteMediaStream=${this.remoteMediaStream}
+                @listen-connection=${this.onListenConnection}
+                @share-screen=${this.onScreenStream}
+                @run-camera=${this.onCameraStream}
+            ></video-ui>
         `;
     }
 }
