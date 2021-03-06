@@ -18,12 +18,6 @@ export default class ConnectionManager {
         this.peerConnection = new RTCPeerConnection(configuration);
     }
 
-    passTracks(localStream: MediaStream) {
-        localStream.getTracks().forEach(track => 
-            this.peerConnection.addTrack(track, localStream)
-        );
-    }
-    
     async initConnection() {
         const offer = await this.peerConnection.createOffer();
         await this.peerConnection.setLocalDescription(offer);

@@ -6,6 +6,11 @@ import initiatorManager from './utils/initiator-manager';
 const VERSION = '1.0';
 const DEFAULT_CONNECTION_ACCESSOR = 'public';
 
+enum StreamType {
+    SCREEN = 'screen',
+    CAMERA = 'camera',
+}
+
 @customElement('app-root')
 export class App extends LitElement {
     @property()
@@ -44,6 +49,13 @@ export class App extends LitElement {
 
     onSetHorizontalResolution(event: CustomEvent) {
         this.videoWidthResolution = event.detail.message;
+
+        if (this.localMediaStream) {
+            const [videoTrack] = this.localMediaStream.getVideoTracks();
+            videoTrack.applyConstraints({
+                width: this.videoWidthResolution
+            });
+        }
     }
 
     async onListenConnection() {
@@ -53,29 +65,16 @@ export class App extends LitElement {
         const offer = await this.signalingService.listenConnectionUpdateOnce('offer');
 
         if (offer && !this.connectionInited) {
-            this.onStartStream('camera');
+            this.onStartStream(StreamType.CAMERA);
         }
     }
 
-    async onStartStream(type: 'camera' | 'screen') {
-        const streamingMethod = {
-            camera: 'getUserMedia',
-            screen: 'getDisplayMedia',
-        }[type];
-
-        // @ts-ignore
-        this.localMediaStream = await navigator.mediaDevices[streamingMethod]({
-            video: {
-                width: this.videoWidthResolution
-            },
-            audio: true,
-        });
-
+    async onStartStream(type: StreamType) {
         this.feedbackMessage = 'Connection initializing...';
         this.signalingService = new SignalinService(this.accessor);
         this.connectionManager = new ConnectionManager();
 
-        this.connectionManager.passTracks(this.localMediaStream);
+        await this.initializeLocalStream(type);
 
         this.runStreamingStatusWatcher();
         this.subscribeICECandidateManagement();
@@ -135,6 +134,40 @@ export class App extends LitElement {
         });
     }
 
+    async initializeLocalStream(type: StreamType) {
+        const streamConstraints = {
+            video: {
+                width: this.videoWidthResolution
+            },
+            audio: true,
+        };
+
+        switch(type) {
+            case StreamType.CAMERA: {
+                this.localMediaStream = await navigator.mediaDevices.getUserMedia(streamConstraints);
+                this.localMediaStream.getTracks().forEach(track => 
+                    this.connectionManager.peerConnection.addTrack(track, this.localMediaStream)
+                );
+                break;
+            }
+            case StreamType.SCREEN: {
+                // @ts-ignore
+                this.localMediaStream = await navigator.mediaDevices.getDisplayMedia(streamConstraints);
+                const audioStream = await navigator.mediaDevices.getUserMedia({audio: true});
+
+                const tracks = [
+                    ...this.localMediaStream.getTracks(),
+                    ...audioStream.getTracks(),
+                ];
+
+                tracks.forEach(track => 
+                    this.connectionManager.peerConnection.addTrack(track, this.localMediaStream)
+                );
+                break;
+            }
+        }
+    }
+
     async processIceCandidates() {
         await Promise.all(
             this.delayedIceCandidates.map(candidate =>
@@ -187,8 +220,8 @@ export class App extends LitElement {
                 .localMediaStream=${this.localMediaStream}
                 .remoteMediaStream=${this.remoteMediaStream}
                 @listen-connection=${this.onListenConnection}
-                @share-screen=${() => this.onStartStream('screen')}
-                @run-camera=${() => this.onStartStream('camera')}
+                @share-screen=${() => this.onStartStream(StreamType.SCREEN)}
+                @run-camera=${() => this.onStartStream(StreamType.CAMERA)}
             ></video-ui>
         `;
     }
