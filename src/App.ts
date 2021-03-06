@@ -1,4 +1,4 @@
-import {customElement, html, LitElement, property} from 'lit-element';
+import {customElement, html, LitElement, property, css} from 'lit-element';
 import ConnectionManager from './services/connection-manager';
 import SignalinService from './services/signaling';
 import initiatorManager from './utils/initiator-manager';
@@ -18,7 +18,6 @@ export class App extends LitElement {
     @property()
     remoteMediaStream?: MediaStream;
 
-
     signalingService?: SignalinService;
     connectionManager?: ConnectionManager;
 
@@ -26,11 +25,25 @@ export class App extends LitElement {
 
     initiatorId?: string;
     connectionInited?: boolean;
+    videoWidthResolution: number;
+
+    static get styles() {
+        return css`
+            h1 {
+                font-weight: 400;
+                margin-bottom: 6vh;
+            }
+        `;
+    }
 
     async firstUpdated() {
         if (!this.initiatorId) {
             this.initiatorId = initiatorManager.getLocalInitiator() || initiatorManager.generateAndSaveLocalInitiator();
         }
+    }
+
+    onSetHorizontalResolution(event: CustomEvent) {
+        this.videoWidthResolution = event.detail.message;
     }
 
     async onListenConnection() {
@@ -52,7 +65,9 @@ export class App extends LitElement {
 
         // @ts-ignore
         this.localMediaStream = await navigator.mediaDevices[streamingMethod]({
-            video: true,
+            video: {
+                width: this.videoWidthResolution
+            },
             audio: true,
         });
 
@@ -159,10 +174,14 @@ export class App extends LitElement {
     render() {
         return html`
             <h1>WebRTC Video communication App v${VERSION}</h1>
-            <span>
-                <div>Room Name</div>
-                <input .value=${this.accessor} ?disabled=${!!this.localMediaStream} />
-            </span>
+            <mwc-textfield
+                outlined
+                required
+                label="Room Name"
+                .value=${this.accessor} 
+                ?disabled=${!!this.localMediaStream}
+            ></mwc-textfield>
+            <video-settings @setHorizontalResolution=${this.onSetHorizontalResolution}></video-settings>
             <video-ui
                 .feedbackMessage=${this.feedbackMessage}
                 .localMediaStream=${this.localMediaStream}
