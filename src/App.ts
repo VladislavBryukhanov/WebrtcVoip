@@ -40,53 +40,74 @@ export class App extends LitElement {
         const offer = await this.signalingService.listenConnectionUpdateOnce('offer');
 
         if (offer && !this.connectionInited) {
-            this.onCameraStream();
+            this.onStartStream('camera');
         }
     }
 
-    async onScreenStream() {
+    async onStartStream(type: 'camera' | 'screen') {
+        const streamingMethod = {
+            camera: 'getUserMedia',
+            screen: 'getDisplayMedia',
+        }[type];
+
         // @ts-ignore
-        this.localMediaStream = await navigator.mediaDevices.getDisplayMedia();
+        this.localMediaStream = await navigator.mediaDevices[streamingMethod]({
+            video: true,
+            audio: true,
+        });
+
+        this.feedbackMessage = 'Connection initializing...';
+        this.signalingService = new SignalinService(this.accessor);
+        this.connectionManager = new ConnectionManager();
+
+        this.connectionManager.passTracks(this.localMediaStream);
+
+        this.runStreamingStatusWatcher();
+        this.subscribeICECandidateManagement();
+
         await this.processConnection();
         await this.processIceCandidates();
+
+        this.connectionInited = true;
     }
 
-    async onCameraStream() {
-        this.localMediaStream = await navigator.mediaDevices.getUserMedia({
-            'video': true,
-            'audio': true,
+    runStreamingStatusWatcher() {
+        this.connectionManager.peerConnection.addEventListener('connectionstatechange', (e) => {
+            if (this.connectionManager.peerConnection.connectionState === 'connected') {
+                this.feedbackMessage = 'Connection established';
+                this.signalingService.disposeConnection();
+            }
+
+            if (this.connectionManager.peerConnection.connectionState === 'failed') {
+                this.feedbackMessage = 'Connection failed please reload page and try again';
+                this.signalingService.disposeConnection();
+            }
         });
-        await this.processConnection();
-        await this.processIceCandidates();
     }
 
     // TODO incapsulate this.connectionManager.peerConnection, add DI to inject connectionManager
     subscribeICECandidateManagement() {
-        const ignorableIceCandidates = new Map<string, RTCIceCandidate>();
+        const localIceCandidates = new Map<string, RTCIceCandidate>();
 
         this.signalingService.listenConnection((connection) => {
-            if (!connection) return;
+            if (!connection || !connection.candidates) return;
 
-            const {candidates: storedCandidates} = connection;
+            connection.candidates.forEach(storedCandidate => {
+                if (!localIceCandidates.has(storedCandidate.candidate)) {
+                    localIceCandidates.set(storedCandidate.candidate, storedCandidate);
 
-            if (storedCandidates) {
-                storedCandidates.forEach(storedCandidate => {
-                    if (!ignorableIceCandidates.has(storedCandidate.candidate)) {
-                        ignorableIceCandidates.set(storedCandidate.candidate, storedCandidate);
-
-                        if (this.connectionInited) {
-                            return this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
-                        }
-
-                        this.delayedIceCandidates.push(storedCandidate);
+                    if (this.connectionInited) {
+                        return this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
                     }
-                });
-            }
+
+                    this.delayedIceCandidates.push(storedCandidate);
+                }
+            });
         });
 
         this.connectionManager.peerConnection.addEventListener('icecandidate', event => {
             if (event.candidate) {
-                ignorableIceCandidates.set(event.candidate.candidate, event.candidate);
+                localIceCandidates.set(event.candidate.candidate, event.candidate);
                 this.signalingService.upsertIceCandidate(event.candidate);
             }
         });
@@ -97,38 +118,18 @@ export class App extends LitElement {
             }   
             this.remoteMediaStream.addTrack(event.track);
         });
-
-        this.connectionManager.peerConnection.addEventListener('connectionstatechange', (event) => {
-            if (this.connectionManager.peerConnection.connectionState === 'connected') {
-                this.feedbackMessage = '';
-                this.signalingService.disposeConnection();
-            }
-
-            if (this.connectionManager.peerConnection.connectionState === 'failed') {
-                this.feedbackMessage = 'Connection failed please reload page and try again';
-                this.signalingService.disposeConnection();
-            }
-        });
     }
-    
+
     async processIceCandidates() {
-        await Promise.all([
+        await Promise.all(
             this.delayedIceCandidates.map(candidate =>
                 this.connectionManager.peerConnection.addIceCandidate(candidate)
             )
-        ]);
+        );
         this.delayedIceCandidates = [];
-        this.connectionInited = true;
     }
 
     async processConnection() {
-        this.feedbackMessage = 'Connection initializing...';
-
-        this.signalingService = new SignalinService(this.accessor);
-        this.connectionManager = new ConnectionManager();
-
-        this.connectionManager.passTracks(this.localMediaStream);
-
         const connection = await this.signalingService.fetchConnection();
 
         if (connection) {
@@ -139,17 +140,15 @@ export class App extends LitElement {
                 await this.signalingService.disposeConnection();
             }
     
+            // Accept connection
             if (connection.offer && !isCreatedByMe && !isExpired) {
-                this.subscribeICECandidateManagement();
-                return this.connectExists(connection.offer);
+                const answer = await this.connectionManager.acceptConnection(connection.offer);
+                return this.signalingService.createConnectionAnswer(answer);
             }
         }
 
-        this.subscribeICECandidateManagement();
-        this.createConnection();
-    }
+        // Create connection
 
-    async createConnection() {
         const offer = await this.connectionManager.initConnection();
         await this.signalingService.createConnectionOffer(offer, this.initiatorId);
 
@@ -157,22 +156,20 @@ export class App extends LitElement {
         await this.connectionManager.establishRemoteConnection(answer);
     }
 
-    async connectExists(offer: RTCSessionDescriptionInit) {
-        const answer = await this.connectionManager.connectExists(offer);
-        await this.signalingService.createConnectionAnswer(answer);
-    }
-    
     render() {
         return html`
             <h1>WebRTC Video communication App v${VERSION}</h1>
-            <input .value=${this.accessor} ?disabled=${!!this.localMediaStream} />
+            <span>
+                <div>Room Name</div>
+                <input .value=${this.accessor} ?disabled=${!!this.localMediaStream} />
+            </span>
             <video-ui
                 .feedbackMessage=${this.feedbackMessage}
                 .localMediaStream=${this.localMediaStream}
                 .remoteMediaStream=${this.remoteMediaStream}
                 @listen-connection=${this.onListenConnection}
-                @share-screen=${this.onScreenStream}
-                @run-camera=${this.onCameraStream}
+                @share-screen=${() => this.onStartStream('screen')}
+                @run-camera=${() => this.onStartStream('camera')}
             ></video-ui>
         `;
     }

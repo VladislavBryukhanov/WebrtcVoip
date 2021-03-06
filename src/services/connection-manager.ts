@@ -1,3 +1,4 @@
+// TODO to .env
 const configuration = {
     iceServers: [{
         urls: [
@@ -35,7 +36,7 @@ export default class ConnectionManager {
         await this.peerConnection.setRemoteDescription(formattedDescription);
     }
 
-    async connectExists(offer: RTCSessionDescriptionInit) {
+    async acceptConnection(offer: RTCSessionDescriptionInit) {
         await this.establishRemoteConnection(offer);
 
         const answer = await this.peerConnection.createAnswer();
