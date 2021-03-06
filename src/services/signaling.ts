@@ -56,21 +56,24 @@ export default class SignalinService {
         return doc.data() as ConnectionInfo;
     }
 
-    listenConnection(listener: (res: ConnectionInfo) => void): Function {
+    listenConnection(callback: (res: ConnectionInfo) => void): Function {
         return this.collection.doc(this.connectionAccessor)
-            .onSnapshot(doc => listener(doc.data() as ConnectionInfo));
+            .onSnapshot(doc => callback(
+                doc.data() as ConnectionInfo
+            ));
     }
 
+    // ????
     listenConnectionUpdateOnce(reaction: keyof ConnectionInfo): Promise<ConnectionInfo> {
         return new Promise((resolve, reject) => {
             const unsubscribe = this.collection.doc(this.connectionAccessor)
                 .onSnapshot(doc => {
-                    const value = doc.data();
+                    const value = doc.data() as ConnectionInfo;
                     if (value && value[reaction]) {
                         unsubscribe();
-                        resolve(value as ConnectionInfo);
+                        resolve(value);
                     }
-                });
+                }, reject);
         });
     }
 

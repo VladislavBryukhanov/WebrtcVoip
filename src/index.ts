@@ -1,3 +1,3 @@
-import './services/firebase-init';
+import './firebase-init';
 import './App';
 import './VideoUi';
