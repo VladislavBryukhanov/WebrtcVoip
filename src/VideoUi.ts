@@ -1,5 +1,4 @@
 import {LitElement, customElement, html, property, query, css} from 'lit-element';
-import {ifDefined} from 'lit-html/directives/if-defined';
 
 enum ViewViews {
     REMOTE = 'remote',
@@ -36,6 +35,20 @@ export class VideoUi extends LitElement {
                 min-width: 320px;
                 max-height: 52vh;
             }
+
+            video::-webkit-media-controls-overlay-play-button,
+            video::-webkit-media-controls-play-button,
+            video::-webkit-media-controls-timeline,
+            video::-webkit-media-controls-timeline-container,
+            video::-webkit-media-controls-time-remaining-display,
+            video::-webkit-media-controls-seek-back-button,
+            video::-webkit-media-controls-seek-forward-button,
+            video::-webkit-media-controls-rewind-button,
+            video::-webkit-media-controls-return-to-realtime-button,
+            video::-webkit-media-controls-toggle-closed-captions-button {
+                display: none;
+            }
+
             .secondary-view {
                 position: absolute;
                 z-index: 1;
@@ -73,8 +86,10 @@ export class VideoUi extends LitElement {
         this.dispatchEvent(new Event(eventName));
     }
 
-    onSwitchPrimaryView(target: ViewViews) {
-        if (target !== this.primaryVideoView) {
+    onSwitchPrimaryView(e: Event, target: ViewViews) {
+        e.preventDefault();
+
+        if (this.remoteMediaStream && target !== this.primaryVideoView) {
             this.primaryVideoView = target;
         }
     }
@@ -92,8 +107,9 @@ export class VideoUi extends LitElement {
                     <video 
                         id="remote-stream-view" 
                         autoplay 
-                        class=${ifDefined(this.primaryVideoView !== ViewViews.REMOTE && 'secondary-view')}
-                        @click=${() => this.onSwitchPrimaryView(ViewViews.REMOTE)}
+                        ?controls=${this.primaryVideoView === ViewViews.REMOTE}
+                        class=${this.primaryVideoView !== ViewViews.REMOTE && 'secondary-view'}
+                        @click=${(e: Event) => this.onSwitchPrimaryView(e, ViewViews.REMOTE)}
                     ></video>
                 `}
 
@@ -102,8 +118,9 @@ export class VideoUi extends LitElement {
                         id="local-stream-view" 
                         autoplay 
                         muted 
-                        class=${ifDefined(this.primaryVideoView !== ViewViews.LOCAL && !!this.remoteMediaStream && 'secondary-view')}
-                        @click=${() => this.onSwitchPrimaryView(ViewViews.LOCAL)}
+                        ?controls=${this.primaryVideoView === ViewViews.LOCAL}
+                        class=${this.primaryVideoView !== ViewViews.LOCAL && !!this.remoteMediaStream && 'secondary-view'}
+                        @click=${(e: Event) => this.onSwitchPrimaryView(e, ViewViews.LOCAL)}
                     ></video>
                 `}
             </div>
