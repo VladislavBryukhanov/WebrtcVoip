@@ -1,5 +1,3 @@
-import './firebase-init';
-
 import '@material/mwc-fab';
 import '@material/mwc-button';
 import '@material/mwc-textfield';

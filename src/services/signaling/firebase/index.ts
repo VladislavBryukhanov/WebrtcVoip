@@ -1,51 +1,18 @@
+import './firebase-init';
 import firebase from 'firebase';
+import {ISignalinService, ConnectionInfo} from '../signaling.interface';
 const db = firebase.firestore();
 
 const COLLECTION_NAME = 'signaling';
 const CONNECTION_TTL = 15 * 1000;
 
-interface ConnectionInfo {
-    offer: RTCSessionDescriptionInit;
-    answer?: RTCSessionDescriptionInit;
-    candidates?: RTCIceCandidate[];
-    expiration_time: number;
-    initiatorId: string;
-}
-
-export default class SignalinService {
-    private collection = db.collection(COLLECTION_NAME);
+export default class SignalinService implements ISignalinService {
+    private collection: firebase.firestore.CollectionReference<firebase.firestore.DocumentData>;
     private connectionAccessor: string;
 
     constructor(connectionAccessor: string) {
         this.connectionAccessor = connectionAccessor;
-    }
-
-    createConnectionOffer({sdp, type}: RTCSessionDescriptionInit, initiatorId: string) {
-        return this.collection
-            .doc(this.connectionAccessor)
-            .set({
-                initiatorId,
-                offer: {sdp, type},
-                expiration_time: Date.now() + CONNECTION_TTL,
-            });
-    }
-
-    createConnectionAnswer({sdp, type}: RTCSessionDescriptionInit) {
-        return this.collection
-            .doc(this.connectionAccessor)
-            .set(
-                {answer: {sdp, type}}, 
-                {merge: true}
-            );
-    }
-
-    upsertIceCandidate(candidate: RTCIceCandidate) {
-        return this.collection
-            .doc(this.connectionAccessor)
-            .set(
-                {candidates: firebase.firestore.FieldValue.arrayUnion(candidate.toJSON())}, 
-                {merge: true}
-            );
+        this.collection = db.collection(COLLECTION_NAME); 
     }
 
     async fetchConnection(): Promise<ConnectionInfo> {
@@ -56,29 +23,61 @@ export default class SignalinService {
         return doc.data() as ConnectionInfo;
     }
 
-    listenConnection(callback: (res: ConnectionInfo) => void): Function {
+    createConnectionOffer({sdp, type}: RTCSessionDescriptionInit, initiatorId: string): Promise<void> {
+        return this.collection
+            .doc(this.connectionAccessor)
+            .set({
+                initiatorId,
+                offer: {sdp, type},
+                expiration_time: Date.now() + CONNECTION_TTL,
+            });
+    }
+
+    createConnectionAnswer({sdp, type}: RTCSessionDescriptionInit): Promise<void> {
+        return this.collection
+            .doc(this.connectionAccessor)
+            .set(
+                {answer: {sdp, type}}, 
+                {merge: true}
+            );
+    }
+
+    upsertIceCandidate(candidate: RTCIceCandidate): Promise<void> {
+        return this.collection
+            .doc(this.connectionAccessor)
+            .set(
+                {candidates: firebase.firestore.FieldValue.arrayUnion(candidate.toJSON())}, 
+                {merge: true}
+            );
+    }
+
+    disposeConnection(): Promise<void> {
+        // TODO Refactor
+        return this.collection.doc(this.connectionAccessor).delete();
+    }
+
+    subscribeCandidatesChanges(callback: (candidates: RTCIceCandidate[]) => void): Function {
         return this.collection.doc(this.connectionAccessor)
-            .onSnapshot(doc => callback(
-                doc.data() as ConnectionInfo
-            ));
+            .onSnapshot(doc => {
+                const con = doc.data() as ConnectionInfo;
+
+                if (con && con.candidates) {
+                    callback(con.candidates);
+                }
+            });
     }
 
     // ????
-    listenConnectionUpdateOnce(reaction: keyof ConnectionInfo): Promise<ConnectionInfo> {
+    watchSessionDescriptionUpdateOnce(reaction: 'offer' | 'answer'): Promise<RTCSessionDescriptionInit> {
         return new Promise((resolve, reject) => {
             const unsubscribe = this.collection.doc(this.connectionAccessor)
                 .onSnapshot(doc => {
                     const value = doc.data() as ConnectionInfo;
                     if (value && value[reaction]) {
                         unsubscribe();
-                        resolve(value);
+                        resolve(value[reaction]);
                     }
                 }, reject);
         });
-    }
-
-    disposeConnection() {
-        // TODO Refactor
-        return this.collection.doc(this.connectionAccessor).delete();
     }
 }

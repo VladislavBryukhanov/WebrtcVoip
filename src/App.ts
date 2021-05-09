@@ -62,7 +62,7 @@ export class App extends LitElement {
         this.signalingService = new SignalinService(this.accessor);
         this.signalingService.disposeConnection();
 
-        const offer = await this.signalingService.listenConnectionUpdateOnce('offer');
+        const offer = await this.signalingService.watchSessionDescriptionUpdateOnce('offer');
 
         if (offer && !this.connectionInited) {
             this.onStartStream(StreamType.CAMERA);
@@ -103,21 +103,17 @@ export class App extends LitElement {
     subscribeICECandidateManagement() {
         const localIceCandidates = new Map<string, RTCIceCandidate>();
 
-        this.signalingService.listenConnection((connection) => {
-            if (!connection || !connection.candidates) return;
+        this.signalingService.subscribeCandidatesChanges((candidates) => candidates.forEach(storedCandidate => {
+            if (!localIceCandidates.has(storedCandidate.candidate)) {
+                localIceCandidates.set(storedCandidate.candidate, storedCandidate);
 
-            connection.candidates.forEach(storedCandidate => {
-                if (!localIceCandidates.has(storedCandidate.candidate)) {
-                    localIceCandidates.set(storedCandidate.candidate, storedCandidate);
-
-                    if (this.connectionInited) {
-                        return this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
-                    }
-
-                    this.delayedIceCandidates.push(storedCandidate);
+                if (this.connectionInited) {
+                    return this.connectionManager.peerConnection.addIceCandidate(storedCandidate);
                 }
-            });
-        });
+
+                this.delayedIceCandidates.push(storedCandidate);
+            }
+        }));
 
         this.connectionManager.peerConnection.addEventListener('icecandidate', event => {
             if (event.candidate) {
@@ -200,7 +196,7 @@ export class App extends LitElement {
         const offer = await this.connectionManager.initConnection();
         await this.signalingService.createConnectionOffer(offer, this.initiatorId);
 
-        const {answer} = await this.signalingService.listenConnectionUpdateOnce('answer');
+        const answer = await this.signalingService.watchSessionDescriptionUpdateOnce('answer');
         await this.connectionManager.establishRemoteConnection(answer);
     }
 
